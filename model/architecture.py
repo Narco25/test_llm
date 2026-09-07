@@ -126,19 +126,27 @@ if torch is not None:
                 return False
 
         @torch.no_grad()
-        def infer(self, prompt: str, max_new_tokens: int = 100, temperature: float = 0.7) -> str:
+        def infer(
+            self,
+            prompt: str,
+            max_new_tokens: int = 150,
+            temperature: float = 0.8,
+        ) -> str:
             if not self.weights_loaded:
                 return f"Custom LLM Echo: {prompt}"
             temperature = max(float(temperature), 1e-5)
+            max_new_tokens = max(0, min(int(max_new_tokens), 150))
             tokens = self.tokenizer.encode(prompt)
             input_ids = torch.tensor([tokens], dtype=torch.long, device=next(self.parameters()).device)
+            newline_id = self.tokenizer.token_to_id.get("\n")
             for _ in range(max_new_tokens):
                 logits = self(input_ids[:, -self.block_size:])[:, -1, :] / temperature
-                probabilities = F.softmax(logits, dim=-1)
+                probabilities = torch.softmax(logits, dim=-1)
                 next_token = torch.multinomial(probabilities, num_samples=1)
-                input_ids = torch.cat((input_ids, next_token), dim=1)
-                if next_token.item() == self.tokenizer.eos_id:
+                next_token_id = next_token.item()
+                if next_token_id == self.tokenizer.eos_id or next_token_id == newline_id:
                     break
+                input_ids = torch.cat((input_ids, next_token), dim=1)
             return self.tokenizer.decode(input_ids[0].tolist())
 else:
     class CustomLLM:
@@ -149,5 +157,10 @@ else:
         def load_weights(self, path: str | Path, device: str = "cpu") -> bool:
             return False
 
-        def infer(self, prompt: str, max_new_tokens: int = 100, temperature: float = 0.7) -> str:
+        def infer(
+            self,
+            prompt: str,
+            max_new_tokens: int = 150,
+            temperature: float = 0.8,
+        ) -> str:
             return f"Custom LLM Echo: {prompt}"
