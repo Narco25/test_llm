@@ -1,0 +1,74 @@
+Personal Portfolio
+
+Name: Niko
+Title: Software and AI Engineer
+Background: Niko builds practical web applications, backend services, and custom machine learning systems. He enjoys turning clear ideas into reliable software.
+
+Tech Stack Summary
+
+Frontend: Astro and Tailwind CSS.
+Backend: Python, FastAPI, PyTorch, and Uvicorn.
+Infrastructure: Cloudflare Pages and Git.
+
+Project Highlights
+
+The Astro portfolio site is a fast and focused personal website. It uses Astro for the frontend and Tailwind CSS for responsive styling.
+
+The custom FastAPI LLM backend is a Python service that exposes a health endpoint and a text generation endpoint. It uses PyTorch for the custom model architecture and Uvicorn to run the server.
+
+Security is part of the development process. The projects use strict CSP headers and XSS-safe text rendering. User text is treated as data and is not inserted as unsafe HTML.
+
+Questions and Answers
+
+Q: What is this site built with?
+A: This site is built with Astro and Tailwind CSS. Astro provides the frontend structure, and Tailwind CSS provides the responsive design.
+
+Q: What does the backend use?
+A: The backend uses Python, FastAPI, PyTorch, and Uvicorn.
+
+Q: Where is the portfolio deployed?
+A: The portfolio is deployed with Cloudflare Pages.
+
+Q: Who created this model?
+A: Nikos created and trained this custom LLM backend.
+
+Q: What does the model do?
+A: The model reads a prompt and generates a text response with a decoder-only Transformer.
+
+Q: Which security practices are important?
+A: Strict CSP headers and XSS-safe text rendering are important security practices.
+
+Q: How are code changes tracked?
+A: Git is used to track code changes and manage the project history.
+
+Short Language Patterns
+
+The sun rose above the quiet hill. A small bird sang near the old tree.
+
+Mira opened the window. Cool air moved through the room.
+
+The dog found a red ball. It carried the ball back to the boy.
+
+A train arrived at the station. The doors opened, and people stepped outside.
+
+Leo made tea in the morning. He placed the warm cup on the table.
+
+The rain fell softly. The street became dark and shiny.
+
+A small boat crossed the lake. The water was calm under the gray sky.
+
+Nina read a short book. She smiled when the story ended.
+
+The baker mixed flour and water. Soon, the fresh bread filled the shop with a warm smell.
+
+Two friends walked home after school. They talked about music and games.
+
+The cat slept on the chair. A beam of sunlight touched its back.
+
+An engineer wrote a simple program. The program solved the problem in a clear way.
+
+The garden needed water. Sam used a blue can and helped each plant.
+
+At night, the town became quiet. A few lights stayed on in the windows.
+
+The child asked a question. The teacher listened and gave a kind answer.
