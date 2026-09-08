@@ -18,6 +18,25 @@ except ImportError:  # pragma: no cover - exercised only in minimal deployments
 
 
 if torch is not None:
+    def _get_vocab_size(tokenizer: object) -> int:
+        vocab_size = getattr(tokenizer, "vocab_size", None)
+        if vocab_size is not None:
+            return int(vocab_size)
+        get_vocab_size = getattr(tokenizer, "get_vocab_size", None)
+        if get_vocab_size is None:
+            raise TypeError("Tokenizer must expose vocab_size or get_vocab_size()")
+        return int(get_vocab_size())
+
+
+    def _get_token_id(tokenizer: object, token: str) -> Optional[int]:
+        token_to_id = getattr(tokenizer, "token_to_id", None)
+        if token_to_id is None:
+            return None
+        if callable(token_to_id):
+            return token_to_id(token)
+        return token_to_id.get(token)
+
+
     class MultiHeadAttention(nn.Module):
         def __init__(self, d_model: int, n_heads: int, block_size: int, dropout: float) -> None:
             super().__init__()
@@ -81,24 +100,35 @@ if torch is not None:
     class CustomLLM(nn.Module):
         def __init__(
             self,
-            tokenizer: Optional[SimpleTokenizer] = None,
+            tokenizer: Optional[object] = None,
+            vocab_size: Optional[int] = None,
             d_model: int = 128,
             n_heads: int = 4,
             n_layers: int = 2,
-            block_size: int = 256,
+            block_size: int = 512,
+            max_seq_len: Optional[int] = None,
             dropout: float = 0.1,
+            weight_tying: bool = True,
         ) -> None:
             super().__init__()
             self.tokenizer = tokenizer or SimpleTokenizer()
+            if max_seq_len is not None:
+                block_size = max_seq_len
+            if block_size < 1:
+                raise ValueError("block_size must be positive")
+            self.vocab_size = vocab_size or _get_vocab_size(self.tokenizer)
             self.block_size = block_size
-            self.token_embedding = nn.Embedding(self.tokenizer.vocab_size, d_model)
+            self.max_seq_len = block_size
+            self.weight_tying = weight_tying
+            self.token_embedding = nn.Embedding(self.vocab_size, d_model)
             self.position_embedding = nn.Embedding(block_size, d_model)
             self.blocks = nn.ModuleList(
                 [TransformerBlock(d_model, n_heads, block_size, dropout) for _ in range(n_layers)]
             )
             self.layer_norm = nn.LayerNorm(d_model)
-            self.lm_head = nn.Linear(d_model, self.tokenizer.vocab_size, bias=False)
-            self.lm_head.weight = self.token_embedding.weight
+            self.lm_head = nn.Linear(d_model, self.vocab_size, bias=False)
+            if weight_tying:
+                self.lm_head.weight = self.token_embedding.weight
             self.weights_loaded = False
 
         def forward(self, input_ids: Tensor) -> Tensor:
@@ -136,21 +166,29 @@ if torch is not None:
                 return f"Custom LLM Echo: {prompt}"
             temperature = max(float(temperature), 1e-5)
             max_new_tokens = max(0, min(int(max_new_tokens), 150))
-            tokens = self.tokenizer.encode(prompt)
+            encoded = self.tokenizer.encode(prompt)
+            tokens = encoded.ids if hasattr(encoded, "ids") else encoded
             input_ids = torch.tensor([tokens], dtype=torch.long, device=next(self.parameters()).device)
-            newline_id = self.tokenizer.token_to_id.get("\n")
+            newline_id = _get_token_id(self.tokenizer, "\n")
+            eos_id = getattr(self.tokenizer, "eos_id", None)
+            if eos_id is None:
+                eos_id = _get_token_id(self.tokenizer, "<EOS>")
             for _ in range(max_new_tokens):
                 logits = self(input_ids[:, -self.block_size:])[:, -1, :] / temperature
                 probabilities = torch.softmax(logits, dim=-1)
                 next_token = torch.multinomial(probabilities, num_samples=1)
                 next_token_id = next_token.item()
-                if next_token_id == self.tokenizer.eos_id or next_token_id == newline_id:
+                if next_token_id == eos_id or next_token_id == newline_id:
                     break
                 input_ids = torch.cat((input_ids, next_token), dim=1)
-            return self.tokenizer.decode(input_ids[0].tolist())
+            decoded_tokens = input_ids[0].tolist()
+            try:
+                return self.tokenizer.decode(decoded_tokens, skip_special_tokens=True)
+            except TypeError:
+                return self.tokenizer.decode(decoded_tokens)
 else:
     class CustomLLM:
-        def __init__(self, tokenizer: Optional[SimpleTokenizer] = None, **_: object) -> None:
+        def __init__(self, tokenizer: Optional[object] = None, **_: object) -> None:
             self.tokenizer = tokenizer or SimpleTokenizer()
             self.weights_loaded = False
 

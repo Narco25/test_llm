@@ -3,3 +3,4 @@ uvicorn>=0.28.0
 pydantic>=2.0.0
 python-dotenv>=1.0.0
 torch>=2.0.0
+tokenizers>=0.20.0
