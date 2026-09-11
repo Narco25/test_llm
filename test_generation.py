@@ -16,6 +16,7 @@ from model.generation import generate
 
 LOGGER = logging.getLogger("test_generation")
 MODEL_DIR = Path(__file__).resolve().parent / "model"
+TOKENIZER_PATH = (MODEL_DIR / "tokenizer.json").resolve()
 EXAMPLE_PROMPTS = {
     "1": "The future of software engineering is",
     "2": "Q: What is this site built with?\nA:",
@@ -81,6 +82,30 @@ def parse_parameters(values: dict[str, float | int], text: str) -> None:
         raise ValueError("top_p must be in the interval (0, 1]")
 
 
+def decode_output(tokenizer: Any, output_ids: torch.Tensor) -> str:
+    """Decode generated IDs while removing special and invalid token IDs."""
+    token_ids = output_ids.detach().cpu().tolist()
+    vocabulary_size = tokenizer.get_vocab_size()
+    special_ids = {
+        token_id
+        for token in (
+            "<PAD>",
+            "<UNK>",
+            "<BOS>",
+            "<EOS>",
+            "<|im_start|>",
+            "<|im_end|>",
+        )
+        if (token_id := tokenizer.token_to_id(token)) is not None
+    }
+    clean_ids = [
+        token_id
+        for token_id in token_ids
+        if 0 <= token_id < vocabulary_size and token_id not in special_ids
+    ]
+    return tokenizer.decode(clean_ids, skip_special_tokens=True).strip()
+
+
 def run_cli() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--max-new-tokens", type=int, default=100)
@@ -90,10 +115,14 @@ def run_cli() -> None:
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
+    if not TOKENIZER_PATH.is_file():
+        raise FileNotFoundError(f"Expected tokenizer at {TOKENIZER_PATH}")
     tokenizer = train_or_load_tokenizer(
         MODEL_DIR / "input.txt",
-        MODEL_DIR / "tokenizer.json",
+        TOKENIZER_PATH,
     )
+    print(f"[INFO] Loaded tokenizer from {TOKENIZER_PATH}")
+    print(f"[INFO] Tokenizer vocabulary size: {tokenizer.get_vocab_size()}")
     model = load_model(tokenizer)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
@@ -142,10 +171,17 @@ def run_cli() -> None:
             top_k=int(parameters["top_k"]),
             top_p=float(parameters["top_p"]),
             repetition_penalty=1.2,
-            eos_token_id=tokenizer.token_to_id("<EOS>"),
+            eos_token_id=None,
             device=device,
         )
-        output_text = tokenizer.decode(output_ids[0].tolist(), skip_special_tokens=True)
+        generated_token_count = output_ids.shape[1] - prompt_ids.shape[1]
+        LOGGER.info(
+            "Generated %d/%d new tokens (repetition_penalty=1.2, eos_token_id=%s)",
+            generated_token_count,
+            int(parameters["max_new_tokens"]),
+            tokenizer.token_to_id("<EOS>"),
+        )
+        output_text = decode_output(tokenizer, output_ids[0])
         print(f"\nGenerated:\n{output_text}")
 
 

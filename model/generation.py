@@ -86,7 +86,10 @@ def generate(
     prompt_ids = prompt_ids.to(device)
 
     generated = prompt_ids.clone()
-    eos_token_id = _resolve_eos_token_id(model, eos_token_id)
+    # An explicit None disables EOS stopping, which is useful for base-model
+    # completion where an EOS-like token may occur in the learned vocabulary.
+    if eos_token_id is not None:
+        eos_token_id = int(eos_token_id)
     finished = torch.zeros(generated.size(0), dtype=torch.bool, device=generated.device)
     model_was_training = model.training
     model.eval()
