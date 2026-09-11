@@ -74,8 +74,8 @@ def create_warmup_cosine_scheduler(
 def train(
     dataset_path: str | None = None,
     checkpoint_path: str | None = None,
-    epochs: int = 10,
-    batch_size: int = 16,
+    epochs: int = 50,
+    batch_size: int = 32,
     sequence_length: int = 256,
     learning_rate: float = 3e-4,
     weight_decay: float = 0.01,
@@ -128,7 +128,13 @@ def train(
         mixed_precision = "fp16"
     amp_dtype = torch.float16 if mixed_precision == "fp16" else torch.bfloat16
 
-    model = CustomLLM(tokenizer=tokenizer, block_size=256)
+    model = CustomLLM(
+        tokenizer=tokenizer,
+        d_model=384,
+        n_heads=6,
+        n_layers=6,
+        block_size=256,
+    )
     model.to(selected_device)
     vocab_size = tokenizer.get_vocab_size()
     optimizer = create_optimizer(model, lr=learning_rate, weight_decay=weight_decay)
