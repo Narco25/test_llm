@@ -76,7 +76,7 @@ def train(
     checkpoint_path: str | None = None,
     epochs: int = 50,
     batch_size: int = 32,
-    sequence_length: int = 256,
+    sequence_length: int = 512,
     learning_rate: float = 3e-4,
     weight_decay: float = 0.01,
     warmup_ratio: float = 0.1,
@@ -133,7 +133,7 @@ def train(
         d_model=384,
         n_heads=6,
         n_layers=6,
-        block_size=256,
+        block_size=512,
     )
     model.to(selected_device)
     vocab_size = tokenizer.get_vocab_size()

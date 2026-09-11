@@ -4,3 +4,4 @@ pydantic>=2.0.0
 python-dotenv>=1.0.0
 torch>=2.0.0
 tokenizers>=0.20.0
+datasets>=2.20.0

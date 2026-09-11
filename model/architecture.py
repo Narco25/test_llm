@@ -105,7 +105,7 @@ if torch is not None:
             d_model: int = 384,
             n_heads: int = 6,
             n_layers: int = 6,
-            block_size: int = 256,
+            block_size: int = 512,
             max_seq_len: Optional[int] = None,
             dropout: float = 0.1,
             weight_tying: bool = True,

@@ -1,7 +1,7 @@
 """Byte-level BPE tokenization and language-model data loading utilities."""
 
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
 import torch
 from torch.utils.data import DataLoader, Dataset
@@ -11,6 +11,7 @@ from tokenizers.models import BPE
 from tokenizers.pre_tokenizers import ByteLevel
 from tokenizers.processors import TemplateProcessing
 from tokenizers.trainers import BpeTrainer
+from tokenizers import AddedToken
 
 
 DEFAULT_VOCAB_SIZE = 4_096
@@ -36,6 +37,77 @@ def format_conversation(messages: Sequence[Mapping[str, str]]) -> str:
             raise ValueError("Each conversation message needs a content field")
         turns.append(f"<|im_start|>{role}\n{content}<|im_end|>\n")
     return "".join(turns)
+
+
+def format_instruction(prompt: str, response: str) -> str:
+    """Format one instruction pair with ChatML role and boundary tokens."""
+    return format_conversation(
+        [
+            {"role": "user", "content": prompt},
+            {"role": "assistant", "content": response},
+        ]
+    )
+
+
+def _conversation_from_record(record: Mapping[str, Any]) -> list[dict[str, str]]:
+    messages = record.get("messages")
+    if isinstance(messages, Sequence) and not isinstance(messages, (str, bytes)):
+        conversation = []
+        for message in messages:
+            if not isinstance(message, Mapping):
+                continue
+            role = message.get("role")
+            content = message.get("content")
+            if role in {"system", "user", "assistant"} and isinstance(content, str):
+                conversation.append({"role": role, "content": content})
+        if any(message["role"] == "user" for message in conversation) and any(
+            message["role"] == "assistant" for message in conversation
+        ):
+            return conversation
+
+    prompt = record.get("instruction") or record.get("prompt") or record.get("question")
+    response = record.get("output") or record.get("response") or record.get("answer")
+    if isinstance(prompt, str) and isinstance(response, str) and prompt and response:
+        return [{"role": "user", "content": prompt}, {"role": "assistant", "content": response}]
+    raise ValueError("Instruction record must contain messages or prompt/response fields")
+
+
+def load_instruction_conversations(
+    dataset_name: str = "HuggingFaceH4/ultrachat_200k",
+    split: str = "train_sft",
+    max_examples: int | None = None,
+) -> list[list[dict[str, str]]]:
+    """Download a Hugging Face instruction dataset and normalize its conversations."""
+    try:
+        from datasets import load_dataset
+    except ImportError as error:  # pragma: no cover - depends on training environment
+        raise RuntimeError("Install the 'datasets' package to download instruction data.") from error
+
+    dataset = load_dataset(dataset_name, split=split)
+    records = dataset if max_examples is None else dataset.select(range(min(max_examples, len(dataset))))
+    conversations = []
+    for record in records:
+        try:
+            conversations.append(_conversation_from_record(record))
+        except ValueError:
+            continue
+    if not conversations:
+        raise ValueError(f"No usable instruction conversations found in {dataset_name}:{split}")
+    return conversations
+
+
+def save_formatted_conversations(
+    conversations: Sequence[Sequence[Mapping[str, str]]],
+    output_path: str | Path,
+) -> Path:
+    """Write ChatML-formatted conversations for tokenizer training."""
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        "\n".join(format_conversation(conversation) for conversation in conversations),
+        encoding="utf-8",
+    )
+    return output_path
 
 
 def train_or_load_tokenizer(
@@ -73,13 +145,19 @@ def train_or_load_tokenizer(
         tokenizer_path.parent.mkdir(parents=True, exist_ok=True)
         tokenizer.save(str(tokenizer_path))
 
-    missing_special_tokens = [
-        token for token in SPECIAL_TOKENS if tokenizer.token_to_id(token) is None
+    special_tokens = [
+        AddedToken(token, normalized=False, special=True)
+        for token in SPECIAL_TOKENS
+        if tokenizer.token_to_id(token) is None
     ]
-    if missing_special_tokens:
-        tokenizer.add_special_tokens(missing_special_tokens)
-        tokenizer_path.parent.mkdir(parents=True, exist_ok=True)
-        tokenizer.save(str(tokenizer_path))
+    if special_tokens:
+        tokenizer.add_special_tokens(special_tokens)
+    else:
+        tokenizer.add_special_tokens(
+            [AddedToken(token, normalized=False, special=True) for token in SPECIAL_TOKENS]
+        )
+    tokenizer_path.parent.mkdir(parents=True, exist_ok=True)
+    tokenizer.save(str(tokenizer_path))
 
     tokenizer.enable_truncation(max_length=1_000_000)
     return tokenizer
@@ -92,7 +170,7 @@ class CausalLanguageModelDataset(Dataset[dict[str, torch.Tensor]]):
         self,
         texts: str | Sequence[str],
         tokenizer: Tokenizer,
-        sequence_length: int = 256,
+        sequence_length: int = 512,
     ) -> None:
         if sequence_length < 2:
             raise ValueError("sequence_length must be at least 2")
@@ -127,7 +205,7 @@ class CausalLanguageModelDataset(Dataset[dict[str, torch.Tensor]]):
         cls,
         text_path: str | Path,
         tokenizer: Tokenizer,
-        sequence_length: int = 256,
+        sequence_length: int = 512,
     ) -> "CausalLanguageModelDataset":
         lines = Path(text_path).read_text(encoding="utf-8").splitlines()
         return cls(lines, tokenizer, sequence_length)
@@ -196,6 +274,8 @@ class InstructionDataset(Dataset[dict[str, torch.Tensor]]):
                     token if is_trainable else -100
                     for token, is_trainable in zip(window[1:], target_mask)
                 ]
+                if not any(label != -100 for label in labels):
+                    continue
                 self.samples.append((inputs, labels))
 
     def __len__(self) -> int:
